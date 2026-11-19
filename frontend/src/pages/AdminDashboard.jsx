@@ -1,6 +1,25 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../api/axios";
+import GuardianAssistant from "../components/GuardAssistant";
+
+const FlagBadge = ({ severity = "low" }) => {
+  const map = {
+    low: { bg: "#fff8e1", color: "#8a5e00", label: "Flagged" },
+    medium: { bg: "#fff3cd", color: "#9a6700", label: "Flagged" },
+    high: { bg: "#fdecea", color: "#c0392b", label: "High Risk" },
+  };
+  const s = map[severity] || map.low;
+  return (
+    <span style={{
+      padding: "2px 8px", borderRadius: "10px", fontSize: "10px",
+      fontWeight: "700", backgroundColor: s.bg, color: s.color,
+      display: "inline-block"
+    }}>
+      {s.label}
+    </span>
+  );
+};
 
 const AdminDashboard = () => {
   const [entries, setEntries] = useState([]);
@@ -74,6 +93,7 @@ const AdminDashboard = () => {
     (entry) => new Date(entry.enteredAt).toDateString() === new Date().toDateString()
   ).length;
   const insideCount = entries.filter((entry) => entry.status === "INSIDE").length;
+  const flaggedCount = entries.filter((entry) => entry.isFlagged).length;
 
   return (
     <div style={styles.page}>
@@ -87,6 +107,7 @@ const AdminDashboard = () => {
           <StatBox value={entries.length} label="Total Entries" />
           <StatBox value={todayCount} label="Today's Entries" />
           <StatBox value={insideCount} label="Currently Inside" />
+          {flaggedCount > 0 && <StatBox value={flaggedCount} label="Flagged" valueColor="#c0392b" />}
         </div>
 
         {uiMessage.text && (
@@ -151,7 +172,21 @@ const AdminDashboard = () => {
                         <>
                           <td style={styles.td}>{entry.visitorName}</td>
                           <td style={styles.td}>{entry.idCardNumber}</td>
-                          <td style={styles.td}>{entry.vehicleNumber}</td>
+                          <td style={styles.td}>
+                            <div style={{ display: "flex", flexDirection: "column" }}>
+                              <span style={{ fontWeight: entry.isFlagged ? "700" : "normal" }}>
+                                {entry.vehicleNumber}
+                              </span>
+                              {entry.isFlagged && (
+                                <div style={{ marginTop: "4px" }}>
+                                  <FlagBadge severity={entry.flagSeverity} />
+                                  <div style={{ fontSize: "10px", color: "#c0392b", marginTop: "2px", fontWeight: "500" }}>
+                                    ⚠️ {entry.flagReason || "Suspicious vehicle"}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
                           <td style={styles.td}>{entry.countryCode} {entry.phoneNumber}</td>
                           <td style={styles.td}>{new Date(entry.enteredAt).toLocaleString()}</td>
                           <td style={styles.td}>{entry.recordedBy}</td>
@@ -170,13 +205,14 @@ const AdminDashboard = () => {
           )}
         </div>
       </div>
+      <GuardianAssistant />
     </div>
   );
 };
 
-const StatBox = ({ value, label }) => (
+const StatBox = ({ value, label, valueColor = "#1a1a2e" }) => (
   <div style={styles.statBox}>
-    <span style={styles.statNum}>{value}</span>
+    <span style={{ ...styles.statNum, color: valueColor }}>{value}</span>
     <span style={styles.statLabel}>{label}</span>
   </div>
 );

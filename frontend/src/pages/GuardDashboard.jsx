@@ -1,3 +1,5 @@
+import { getAllLogs,createLogs,exitvisitor } from "../api/entryLog";
+
 //all imports and phone number validations 
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
@@ -5,7 +7,7 @@ import API from "../api/axios";
 import { isValidPhoneNumber } from "libphonenumber-js";
 import { FaCar, FaTools, FaComment, FaBox, FaUser, FaMotorcycle, FaTruck } from "react-icons/fa";
 import { MdElectricRickshaw } from "react-icons/md";
-
+import GuardianAssistant from "../components/GuardAssistant";
 //Constraints 
 const Country_Codes = [
   { code: "+91", flag: "🇮🇳", name: "India" },
@@ -38,7 +40,7 @@ const VEHICLE_TYPES = [
      label: "Three Wheeler",
       icon: MdElectricRickshaw, 
       examples: "Auto Rickshaw,E-Rickshaw,Tempo", 
-      requiredFields: ["rcBookNo", "permitNo", "passengerCount"],
+      requiredFields: ["rcBookNo", "permitNumber", "passengerCount"],
        optionalField: ["insuranceValidTill"] },
 
   {
@@ -55,8 +57,8 @@ const VEHICLE_TYPES = [
     label: "Heavy Vehicle",
     icon: FaTruck,
     examples: "Truck, Bus, Tractor, Tanker",
-    requiredFields: ["rcBookNo", "loadType", "loadWeight", "vendorNumber", "driverLicenceNo"],
-    optionalField: ["challanNo", "insuranceValidTill"]
+    requiredFields: ["rcBookNo", "loadType", "loadWeight", "vendorNumber", "driverLicenceNumber"],
+    optionalField: ["challanNumber", "insuranceValidTill"]
   },
 ];
 
@@ -173,6 +175,23 @@ fontWeight: "600", backgroundColor: s.bg, color: s.color,
 </span>
 );
 } ;
+
+const FlagBadge = ({severity = "low"}) => {
+const map = {
+low: { bg: "#fff8e1", color: "#8a5e00", label: "Flagged" },
+medium: { bg: "#fff3cd", color: "#9a6700", label: "Flagged" },
+high: { bg: "#fdecea", color: "#c0392b", label: "High Risk" },
+};
+const s = map[severity] || map.low;
+return (
+<span style={{
+padding: "3px 10px", borderRadius: "12px", fontSize: "11px",
+fontWeight: "700", backgroundColor: s.bg, color: s.color,
+}}>
+{s.label}
+</span>
+);
+};
 
 const PhotoCapture = ({ label, fieldName, currentPhoto, entryId, onUploaded }) => {
   const videoRef = useRef(null);
@@ -371,6 +390,8 @@ const [phoneError, setPhoneError] = useState("");
 //Fetch
 useEffect(() => {
 fetchEntries();
+const refreshId = setInterval(fetchEntries, 30000);
+return () => clearInterval(refreshId);
 }, []);
 
 useEffect(()=>{
@@ -392,7 +413,7 @@ useEffect(()=>{
 
 async function fetchEntries() {
 try {
-const response = await API.get("/entrylogs");
+const response = await getAllLogs();
 const data = Array.isArray(response.data) ? response.data : [];
 setEntries(data);
 } catch (err) {
@@ -473,7 +494,7 @@ return;
 }
 
 try {
-await API.post("/entrylogs", {
+await createLogs("/entrylogs", {
 ...baseForm,
 ...purposeForm,
 visitorName: baseForm.visitorName.trim(),
@@ -517,7 +538,7 @@ const handleConfirmExit = async (e) => {
 e.preventDefault();
 const {entry} = exitModal;
 try {
-const response = await API.put(`/entrylogs/${entry._id}/exit`, {
+const response = await exitvisitor(entry._id, {
 exitType,
 exitReason,
 expectedReturnAt: exitType!=="REGULAR" && exitType !== "PERMANENT"? new Date (Date.now() + (EXPECTED_DURATION[exitType]||60)*60000).toISOString():null,
@@ -549,9 +570,58 @@ currentEntries.map((entry) => entry._id === updatedEntry._id ? updatedEntry : en
 setUiMessage({ type: "success", text: "Photo uploaded successfully." });
 };
 
+//feature of adding todays entries , check flagged vehicle and overdue one 
+
+const today = new Date().toDateString();
+
+const stats = {
+  //todays entry 
+  totalEntryToday : entries.filter(e=>
+    new Date (e.enteredAt).toDateString() === today
+  ).length,
+//currentlt inside 
+currentlyInside : entries.filter(e => 
+  e.status === "INSIDE"
+).length,
+
+//flagged 
+flagged : entries.filter(e=> 
+  e.isFlagged === true 
+).length,
+
+overdue : overdueAlerts.length
+};
+
 //Render
 return (
 <div style={styles.page}>
+<style>{`
+@keyframes dashboardFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes softPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.28); }
+  50% { box-shadow: 0 0 0 7px rgba(231, 76, 60, 0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+button, input, select, textarea {
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease;
+}
+button:hover {
+  transform: translateY(-1px);
+}
+button:active {
+  transform: translateY(0);
+}
+input:focus, select:focus, textarea:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+`}</style>
 
 {/* Navbar */}
 <div style={styles.navbar}>
@@ -578,6 +648,35 @@ return (
 </div>
 )}
 
+<div style ={styles.statsBar}>
+  {[
+    {label : "Total Today" , value : stats.totalEntryToday,color:"#1a1a2e",bg:"#f0f4ff"},
+    {label : "Currently Inside" , value : stats.currentlyInside,color:"#27ae60",bg:"#e8f5e9"},
+    {label : "Flagged" , value : stats.flagged,color:"#e67e22",bg:"#fff8e1"},
+    {label : "Overdue" , value : stats.overdue,color:"#e74c3c",bg:"#fdecea"},
+  ].map((item,index)=>(
+    <div 
+    key={item.label}
+    style={{
+      ...styles.statCard,
+      backgroundColor:item.bg,
+      animationDelay: `${index * 70}ms`,
+    }}>
+   <p
+   style={{
+    ...styles.statValue,
+    color:item.color,
+   }}>
+    {item.value}
+   </p>
+   <p
+   style={styles.statLabel}>
+    {item.label}
+   </p>
+
+    </div>
+  ))}
+</div>
 {/* ── 3-column layout ── */}
 <div style={styles.layout}>
 
@@ -627,6 +726,7 @@ key={entry._id}
 onClick={() => setSelectedEntry(entry)}
 style={{
 ...styles.entryCard,
+...(entry.isFlagged ? styles.entryCardFlagged : {}),
 ...(selectedEntry?._id === entry._id ? styles.entryCardActive : {}),
 }}
 >
@@ -642,6 +742,7 @@ day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
 </div>
 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
 <StatusBadge status={entry.status} />
+{entry.isFlagged && <FlagBadge severity={entry.flagSeverity} />}
 {timer && (
 <span style={{
 fontSize: "10px", fontWeight: "700", padding: "2px 6px",
@@ -1125,7 +1226,7 @@ required style={styles.input}
 <div style={styles.fieldGroup}>
 <label style={styles.label}>Customer Complaint *</label>
 <textarea
-name="complaint" value={purposeForm.complaint}
+name="customerComplaint" value={purposeForm.customerComplaint}
 onChange={handlePurposeChange}
 placeholder="Describe the issue in detail e.g. Engine noise, AC not cooling..."
 required
@@ -1274,6 +1375,9 @@ style={{ background: "none", border: "none", cursor: "pointer", fontSize: "18px"
 ["Entered At", new Date(selectedEntry.enteredAt).toLocaleString()],
 ["Recorded By", selectedEntry.recordedBy],
 ["Status", <StatusBadge key="s" status={selectedEntry.status} />],
+selectedEntry.isFlagged && ["Risk", <FlagBadge key="f" severity={selectedEntry.flagSeverity} />],
+selectedEntry.isFlagged && ["Flag Reason", selectedEntry.flagReason || "Suspicious activity detected"],
+selectedEntry.isFlagged && selectedEntry.flaggedAt && ["Flagged At", new Date(selectedEntry.flaggedAt).toLocaleString()],
 selectedEntry.exitedAt && ["Exited At", new Date(selectedEntry.exitedAt).toLocaleString()],
 selectedEntry.serviceDetails?.complaint && ["Complaint", selectedEntry.serviceDetails.complaint],
 selectedEntry.serviceDetails?.serviceAdvisor && ["Advisor", selectedEntry.serviceDetails.serviceAdvisor],
@@ -1415,7 +1519,7 @@ Cancel
 </div>
 </div>
 )}
-
+<GuardianAssistant />
 </div>
 );
 };
@@ -1425,38 +1529,41 @@ Cancel
 const styles = {
 page: {
 minHeight: "100vh",
-backgroundColor: "#f0f2f5",
-fontFamily: "'Segoe UI', sans-serif",
+backgroundColor: "#f6f8fb",
+color: "#172033",
+fontFamily: "'Inter', 'Segoe UI', sans-serif",
 },
 navbar: {
 display: "flex", justifyContent: "space-between", alignItems: "center",
-backgroundColor: "#1a1a2e", padding: "14px 24px", color: "#fff",
+backgroundColor: "#111827", padding: "14px 24px", color: "#fff",
 position: "sticky", top: 0, zIndex: 100,
+boxShadow: "0 10px 28px rgba(17,24,39,0.14)",
 },
-navTitle: { margin: 0, fontSize: "18px", fontWeight: "600" },
+navTitle: { margin: 0, fontSize: "18px", fontWeight: "700", letterSpacing: "0" },
 logoutBtn: {
-padding: "8px 16px", backgroundColor: "#e74c3c", color: "#fff",
-border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px",
+padding: "9px 16px", backgroundColor: "#dc2626", color: "#fff",
+border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px",
+fontWeight: "700", boxShadow: "0 8px 18px rgba(220,38,38,0.22)",
 },
 overdueChip: {
-padding: "6px 12px", backgroundColor: "#e74c3c", color: "#fff",
+padding: "6px 12px", backgroundColor: "#dc2626", color: "#fff",
 borderRadius: "20px", fontSize: "12px", fontWeight: "600",
-animation: "pulse 1.5s infinite",
+animation: "softPulse 1.8s infinite",
 },
 overdueBanner: {
-backgroundColor: "#fdecea", borderLeft: "4px solid #e74c3c",
+backgroundColor: "#fff1f2", borderLeft: "4px solid #dc2626",
 padding: "10px 24px", fontSize: "13px", color: "#c0392b",
 display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center",
 },
 overdueTag: {
-backgroundColor: "#e74c3c", color: "#fff",
+backgroundColor: "#dc2626", color: "#fff",
 padding: "2px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "600",
 },
 
 // Layout
 layout: {
 display: "grid",
-gridTemplateColumns: "280px 1fr",
+gridTemplateColumns: "300px minmax(0, 1fr)",
 gap: "0",
 minHeight: "calc(100vh - 52px)",
 },
@@ -1464,49 +1571,56 @@ minHeight: "calc(100vh - 52px)",
 // Sidebar
 sidebar: {
 backgroundColor: "#fff",
-borderRight: "1px solid #e8eaed",
+borderRight: "1px solid #e5e7eb",
 display: "flex", flexDirection: "column",
 overflowY: "auto",
+boxShadow: "8px 0 24px rgba(15,23,42,0.03)",
 },
-searchBox: { padding: "16px 12px 8px 12px" },
+searchBox: { padding: "18px 14px 10px 14px" },
 searchInput: {
-width: "100%", padding: "9px 12px", border: "1px solid #ddd",
+width: "100%", padding: "11px 13px", border: "1px solid #d8dee8",
 borderRadius: "8px", fontSize: "13px", boxSizing: "border-box", outline: "none",
+backgroundColor: "#f8fafc",
 },
 filterTabs: {
-display: "flex", borderBottom: "1px solid #eee", padding: "0 8px",
+display: "flex", borderBottom: "1px solid #eef1f5", padding: "0 10px",
 },
 filterTab: {
-flex: 1, padding: "8px 4px", border: "none", background: "none",
-cursor: "pointer", fontSize: "11px", fontWeight: "600", color: "#999",
+flex: 1, padding: "10px 4px", border: "none", background: "none",
+cursor: "pointer", fontSize: "11px", fontWeight: "700", color: "#8a94a6",
 borderBottom: "2px solid transparent",
 },
 filterTabActive: {
-color: "#1a1a2e", borderBottom: "2px solid #1a1a2e",
+color: "#111827", borderBottom: "2px solid #2563eb",
 },
 entryList: { flex: 1, overflowY: "auto" },
 entryCard: {
-padding: "12px 14px", borderBottom: "1px solid #f0f0f0",
-cursor: "pointer", transition: "background 0.1s",
+padding: "13px 14px", borderBottom: "1px solid #f0f3f7",
+cursor: "pointer", transition: "background 0.16s ease, border-color 0.16s ease, transform 0.16s ease",
+borderLeft: "3px solid transparent",
+animation: "slideInLeft 260ms ease both",
 },
-entryCardActive: { backgroundColor: "#f0f4ff" },
-entryVehicle: { margin: "0 0 2px 0", fontWeight: "600", fontSize: "13px", color: "#1a1a2e" },
-entryName: { margin: "0 0 2px 0", fontSize: "12px", color: "#555" },
-entryTime: { margin: 0, fontSize: "11px", color: "#999" },
+entryCardFlagged: { borderLeft: "3px solid #dc2626", backgroundColor: "#fff7f7" },
+entryCardActive: { backgroundColor: "#eef4ff", borderLeft: "3px solid #2563eb" },
+entryVehicle: { margin: "0 0 3px 0", fontWeight: "700", fontSize: "13px", color: "#111827" },
+entryName: { margin: "0 0 3px 0", fontSize: "12px", color: "#4b5563" },
+entryTime: { margin: 0, fontSize: "11px", color: "#94a3b8" },
 
 // Main panel
-mainPanel: { padding: "24px", overflowY: "auto" },
+mainPanel: { padding: "24px", overflowY: "auto", animation: "dashboardFadeIn 320ms ease both" },
 card: {
-backgroundColor: "#fff", borderRadius: "12px",
-padding: "24px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
+backgroundColor: "#fff", borderRadius: "10px",
+padding: "24px", boxShadow: "0 12px 30px rgba(15,23,42,0.07)",
+border: "1px solid #edf1f6",
+animation: "dashboardFadeIn 280ms ease both",
 },
 cardTitle: {
 margin: "0 0 20px 0", fontSize: "16px", fontWeight: "600",
-color: "#1a1a2e", display: "flex", alignItems: "center", gap: "10px",
+color: "#111827", display: "flex", alignItems: "center", gap: "10px",
 },
 stepBadge: {
-width: "26px", height: "26px", borderRadius: "50%",
-backgroundColor: "#1a1a2e", color: "#fff",
+width: "26px", height: "26px", borderRadius: "8px",
+backgroundColor: "#2563eb", color: "#fff",
 display: "inline-flex", alignItems: "center", justifyContent: "center",
 fontSize: "13px", fontWeight: "700", flexShrink: 0,
 },
@@ -1516,48 +1630,52 @@ row2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
 fieldGroup: { marginBottom: "16px" },
 label: {
 display: "block", marginBottom: "6px",
-fontSize: "12px", fontWeight: "600", color: "#555",
-textTransform: "uppercase", letterSpacing: "0.04em",
+fontSize: "12px", fontWeight: "700", color: "#5b6472",
+textTransform: "uppercase", letterSpacing: "0.02em",
 },
 input: {
-width: "100%", padding: "10px 12px", border: "1px solid #ddd",
+width: "100%", padding: "11px 12px", border: "1px solid #d8dee8",
 borderRadius: "8px", fontSize: "14px", boxSizing: "border-box", outline: "none",
-backgroundColor: "#fff",
+backgroundColor: "#fbfcfe", color: "#172033",
 },
 nextBtn: {
-width: "100%", padding: "13px", backgroundColor: "#1a1a2e",
+width: "100%", padding: "13px", backgroundColor: "#111827",
 color: "#fff", border: "none", borderRadius: "8px",
 fontSize: "15px", cursor: "pointer", fontWeight: "600", marginTop: "8px",
+boxShadow: "0 10px 22px rgba(17,24,39,0.18)",
 },
 backBtn: {
-padding: "8px 14px", backgroundColor: "#f0f2f5",
-color: "#555", border: "none", borderRadius: "6px",
+padding: "8px 14px", backgroundColor: "#eef2f7",
+color: "#374151", border: "1px solid #d9e1ec", borderRadius: "8px",
 cursor: "pointer", fontSize: "13px", fontWeight: "500",
 },
 submitBtn: {
-width: "100%", padding: "13px", backgroundColor: "#27ae60",
+width: "100%", padding: "13px", backgroundColor: "#16a34a",
 color: "#fff", border: "none", borderRadius: "8px",
 fontSize: "15px", cursor: "pointer", fontWeight: "600",
+boxShadow: "0 10px 22px rgba(22,163,74,0.2)",
 },
 
 // Purpose
 summaryChip: {
 display: "inline-block", padding: "8px 16px",
-backgroundColor: "#f0f4ff", borderRadius: "20px",
-fontSize: "13px", color: "#1a1a2e", marginBottom: "20px",
+backgroundColor: "#eef4ff", borderRadius: "18px",
+fontSize: "13px", color: "#172033", marginBottom: "20px",
+border: "1px solid #dbe7ff",
 },
 purposeSection: {
-padding: "12px 16px", backgroundColor: "#f8f9fa",
+padding: "12px 16px", backgroundColor: "#f8fafc",
 borderRadius: "8px", marginBottom: "16px",
-borderLeft: "4px solid #1a1a2e",
+borderLeft: "4px solid #2563eb",
 },
-purposeSectionTitle: { margin: "0 0 4px 0", fontWeight: "600", fontSize: "14px", color: "#1a1a2e" },
-purposeHint: { margin: 0, fontSize: "12px", color: "#888" },
+purposeSectionTitle: { margin: "0 0 4px 0", fontWeight: "700", fontSize: "14px", color: "#111827" },
+purposeHint: { margin: 0, fontSize: "12px", color: "#64748b" },
 
 // Message
 msgBanner: {
 padding: "12px 16px", borderRadius: "8px", fontSize: "13px",
-marginBottom: "16px", fontWeight: "500",
+marginBottom: "16px", fontWeight: "600",
+boxShadow: "0 8px 18px rgba(15,23,42,0.06)",
 },
 
 // Photos
@@ -1568,10 +1686,10 @@ gap: "12px",
 marginTop: "18px",
 },
 photoBox: {
-border: "1px solid #e5e7eb",
+border: "1px solid #e2e8f0",
 borderRadius: "8px",
-padding: "10px",
-backgroundColor: "#fafafa",
+padding: "12px",
+backgroundColor: "#fbfcfe",
 },
 photoHeader: {
 display: "flex",
@@ -1583,22 +1701,23 @@ marginBottom: "8px",
 },
 photoLink: {
 fontSize: "12px",
-color: "#2980b9",
+color: "#2563eb",
 textDecoration: "none",
+fontWeight: "700",
 },
 photoPreview: {
 width: "100%",
 height: "120px",
 objectFit: "cover",
 borderRadius: "6px",
-backgroundColor: "#eee",
+backgroundColor: "#eef2f7",
 display: "block",
 },
 photoPlaceholder: {
 height: "120px",
 borderRadius: "6px",
-backgroundColor: "#eef0f3",
-color: "#888",
+backgroundColor: "#eef2f7",
+color: "#94a3b8",
 display: "flex",
 alignItems: "center",
 justifyContent: "center",
@@ -1620,7 +1739,7 @@ marginTop: "8px",
 smallBtn: {
 flex: 1,
 padding: "8px 10px",
-backgroundColor: "#1a1a2e",
+backgroundColor: "#111827",
 color: "#fff",
 border: "none",
 borderRadius: "6px",
@@ -1631,9 +1750,9 @@ cursor: "pointer",
 smallMutedBtn: {
 flex: 1,
 padding: "8px 10px",
-backgroundColor: "#e8eaed",
-color: "#333",
-border: "none",
+backgroundColor: "#eef2f7",
+color: "#374151",
+border: "1px solid #d9e1ec",
 borderRadius: "6px",
 fontSize: "12px",
 fontWeight: "600",
@@ -1652,13 +1771,43 @@ backgroundColor: "rgba(0,0,0,0.55)",
 display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
 },
 modalContent: {
-backgroundColor: "#fff", borderRadius: "12px", padding: "28px",
+backgroundColor: "#fff", borderRadius: "10px", padding: "28px",
 width: "100%", maxWidth: "480px",
-boxShadow: "0 8px 32px rgba(0,0,0,0.18)", maxHeight: "90vh", overflowY: "auto",
+boxShadow: "0 24px 60px rgba(15,23,42,0.24)", maxHeight: "90vh", overflowY: "auto",
+border: "1px solid #edf1f6",
+animation: "dashboardFadeIn 220ms ease both",
 },
 exitBtn: {
 padding: "6px 12px", backgroundColor: "#e74c3c", color: "#fff",
 border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px",
+},
+statsBar: {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: "12px",
+  padding: "18px 24px",
+  backgroundColor: "#f6f8fb",
+},
+statCard: {
+  borderRadius: "10px",
+  padding: "16px 20px",
+  textAlign: "center",
+  boxShadow: "0 10px 24px rgba(15,23,42,0.06)",
+  border: "1px solid rgba(226,232,240,0.9)",
+  animation: "dashboardFadeIn 280ms ease both",
+},
+statValue: {
+  margin: "0 0 4px 0",
+  fontSize: "28px",
+  fontWeight: "800",
+},
+statLabel: {
+  margin: 0,
+  fontSize: "12px",
+  color: "#64748b",
+  fontWeight: "700",
+  textTransform: "uppercase",
+  letterSpacing: "0.02em",
 },
 };
 

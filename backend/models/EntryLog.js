@@ -77,7 +77,7 @@ const EntrylogSchema = new mongoose.Schema({
         exitedAt:{type:Date , default : null},
         expectedReturnAt:{type:Date,default:null},
         status:{type:String, 
-            enum :['INSIDE' , 'EXITED', 'PERMANENT', 'SERVICE', 'TEST_DRIVE'],
+            enum :['INSIDE' , 'EXITED', 'PERMANENT', 'SERVICE', 'TEST_DRIVE','OVERDUE'],
             default:'INSIDE'
         },
         exitType:{
@@ -100,6 +100,11 @@ const EntrylogSchema = new mongoose.Schema({
             url:{type:String, default:""},
             publicId:{type:String, default:""},
         },
+
+        isFlagged :{type: Boolean, default : false },//is there any suspicious vehicle 
+        flagReason :{type: String, default : "" }, // reason of that suspiciousness 
+        flagSeverity :{type: String,enum :["low", "medium" , "high"] ,default : "low"}, // how serious the situation is 
+        flaggedAt :{type: Date },
 
     },{timestamps :true});
     //timestamps --> when the data is created and updatedAt

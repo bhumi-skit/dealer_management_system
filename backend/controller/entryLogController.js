@@ -16,7 +16,7 @@ const markExit = async (req, res) => {
       SERVICE :'SERVICE',
       TEST_DRIVE :'TEST_DRIVE',
     };
-
+ 
     const updatedLog = await EntryLog.findByIdAndUpdate(
       id,
       {  
@@ -204,19 +204,21 @@ const getAllLogs = async(req,res)=>{
 
 const updateLog = async(req,res)=>{
   try{
-    const updatedLog = await EntryLog.findByIdAndUpdate(
-      req.params.id,
-      { $set: req.body },
-      { new: true, runValidators: true }
-    );
-
-    if(!updatedLog){
-      return res.status(404).json({message:"Entry log not found"});
+    const entry = await EntryLog.findById(req.params.id);
+    if(!entry){
+      return res.status(404).json({message:"Entry not found"});
     }
+    //copy the incoming data into the document
+    Object.assign(entry,req.body);
 
-    res.status(200).json(updatedLog);
-  }catch(err){
-    res.status(400).json({message:err.message});
+    //.save() will now trigger pre('save') automatically
+    const updatedLog = await entry.save();
+
+    res.status(200).json({message:"Entry updated",entry:updatedLog});
+  }
+  catch(err){
+    console.error("Updated entry error:",err);
+    res.status(500).json({message:err.message || "Server error"});
   }
 };
 

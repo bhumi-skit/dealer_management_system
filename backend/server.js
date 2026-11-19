@@ -1,9 +1,11 @@
+const dotenv = require('dotenv');
+dotenv.config();
+global.fetch = require('node-fetch');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const dotenv = require('dotenv');
-dotenv.config();
-
+const {startAgent} = require("./guardianAgent");
+const agentRoutes = require("./routes/agentRoutes");
 const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/authRoutes');
 const entryLogRoutes = require('./routes/entryLogRoutes');
@@ -32,7 +34,7 @@ const limiter = rateLimit({
     //routes 
     app.use('/api/auth',authRoutes);
     app.use('/api/entrylogs',entryLogRoutes);
-    
+    app.use('/api/agent',agentRoutes);
     
     //Test routes
     app.get('/',(req,res)=>{
@@ -41,7 +43,9 @@ const limiter = rateLimit({
     
     //now connection of mongodb
     mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log("Mongo Connected"))
+    .then(() =>{ console.log("Mongo Connected");
+        startAgent();
+    })
     .catch((err)=>console.log("Mongo not connected",err));
     
     ///Start the server 
